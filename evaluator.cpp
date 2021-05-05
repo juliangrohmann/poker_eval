@@ -1,193 +1,90 @@
 #include "evaluator.h"
 
 #include <algorithm>
-#include <iostream>
 
 namespace Poker {
-	// evaluate
+	// CachedEvaluator
 
-	void RuntimeEvaluator::process_cards()
+	void CachedEvaluator::process_flush(Props& props)
 	{
-		for (int i = 0; i < 5; ++i) {
-			hero.cards[i] = board[i];
-			vill.cards[i] = board[i];
-		}
-		hero.cards[5] = hero.hand.get_primary();
-		hero.cards[6] = hero.hand.get_secondary();
-		vill.cards[5] = vill.hand.get_primary();
-		vill.cards[6] = vill.hand.get_secondary();
-
-		std::sort(hero.cards.rbegin(), hero.cards.rend());
-		std::sort(vill.cards.rbegin(), vill.cards.rend());
+		props.is_flush = board_cache->suit_count + props.cache->suits[board_cache->max_suit] >= 5;
 	}
 
-	void RuntimeEvaluator::process_flush()
+	void CachedEvaluator::process_straight(Props& props)
 	{
-		for (int i = 0; i < 4; ++i) {
-			hero.suits[i] = 0;
-			vill.suits[i] = 0;
-		}
+		props.hand_ranks[0] = props.cache->hand.primary.rank;
+		props.hand_ranks[1] = props.cache->hand.secondary.rank;
 
-		for (const Card& card : board) {
-			++hero.suits[static_cast<int>(card.get_suit())];
-		}
+		props.straight_rank = board_cache->straights[props.hand_ranks[0] - 2][props.hand_ranks[1] - 2];
+		props.is_straight = props.straight_rank != 1;
+	}
 
-		vill.suits = hero.suits;
+	void CachedEvaluator::process_matches()
+	{
+		hero.match_counts = { 0 };
+		vill.match_counts = { 0 };
 
-		++hero.suits[static_cast<int>(hero.hand.get_primary().get_suit())];
-		++hero.suits[static_cast<int>(hero.hand.get_secondary().get_suit())];
-		++vill.suits[static_cast<int>(vill.hand.get_primary().get_suit())];
-		++vill.suits[static_cast<int>(vill.hand.get_secondary().get_suit())];
+		char count;
+		char index;
+		for (auto& entry : board_cache->ranks) {
+			index = entry.first;
 
-		hero.is_flush = false;
-		vill.is_flush = false;
-		for (int i = 0; i < 4; ++i) {
-			if (hero.suits[i] >= 5) {
-				hero.flush_suit = static_cast<CardSuit>(i);
-				hero.is_flush = true;
-			}
-			if (vill.suits[i] >= 5) {
-				vill.flush_suit = static_cast<CardSuit>(i);
-				vill.is_flush = true;
-			}
+			count = hero.cache->ranks[index] + entry.second - 1;
+			hero.matches[count][hero.match_counts[count]++] = index;
+
+			count = vill.cache->ranks[index] + entry.second - 1;
+			vill.matches[count][vill.match_counts[count]++] = index;
 		}
 	}
 
-	void RuntimeEvaluator::process_straight(Props& props)
+	void CachedEvaluator::init_royal_flush(Props& props)
 	{
-		int counter = 0;
-		int i = 0;
-		for (; i < 3; ++i) {
-			curr_rank = props.cards[i].get_rank();
-			next_rank = props.cards[i + 1].get_rank();
-
-			if (curr_rank == next_rank) {
-				continue;
-			}
-
-			if (next_rank == curr_rank - 1) {
-				++counter;
-				if (counter == 1) props.straight_rank = curr_rank;
-			}
-			else {
-				counter = 0;
-			}
-		}
-
-		if (counter == 0 &&
-			(props.cards.back().get_rank() != CardRank::C_2 || props.cards.front().get_rank() != CardRank::C_A))
-		{
-			props.is_straight = false;
+		if (!props.is_flush || !props.is_straight) {
+			props.is_royal = false;
 			return;
 		}
 
-		for (; i < 6; ++i) {
-			curr_rank = props.cards[i].get_rank();
-			next_rank = props.cards[i + 1].get_rank();
+		props.cards = {
+			props.cache->hand.primary, props.cache->hand.secondary,
+			board_cache->board[0], board_cache->board[1], board_cache->board[2],
+			board_cache->board[3], board_cache->board[4]
+		};
+		std::sort(props.cards.rbegin(), props.cards.rend());
 
-			if (curr_rank == next_rank) {
-				continue;
-			}
-
-			if (next_rank == curr_rank - 1) {
-				++counter;
-				if (counter == 4) {
-					props.is_straight = true;
-					return;
-				}
-			}
-			else {
-				props.is_straight = false;
-				return;
-			}
-		}
-
-		if (counter == 3 &&
-			props.cards.back().get_rank() == CardRank::C_2 &&
-			props.cards.front().get_rank() == CardRank::C_A)
-		{
-			props.straight_rank = CardRank::C_5;
-			props.is_straight = true;
-		}
-		else {
-			props.is_straight = false;
-		}
-	}
-
-	void RuntimeEvaluator::process_ranks()
-	{
-		for (int i = 0; i < 13; ++i) {
-			hero.ranks[i] = 0;
-			vill.ranks[i] = 0;
-		}
-
-		for (const Card& card : board) {
-			++hero.ranks[static_cast<int>(card.get_rank())];
-		}
-
-		vill.ranks = hero.ranks;
-
-		++hero.ranks[static_cast<int>(hero.hand.get_primary().get_rank())];
-		++hero.ranks[static_cast<int>(hero.hand.get_secondary().get_rank())];
-		++vill.ranks[static_cast<int>(vill.hand.get_primary().get_rank())];
-		++vill.ranks[static_cast<int>(vill.hand.get_secondary().get_rank())];
-	}
-
-	void RuntimeEvaluator::process_matches(Props& props)
-	{
-		props.pair_count = 0;
-		props.trips_count = 0;
-		props.is_quads = false;
-
-		int count;
-		for (int i = 12; i >= 0; --i) {
-			count = props.ranks[i];
-			if (count == 2) props.pairs[props.pair_count++] = static_cast<CardRank>(i);
-			else if (count == 3) props.trips[props.trips_count++] = static_cast<CardRank>(i);
-			else if (count == 4) {
-				props.quads = static_cast<CardRank>(i);
-				props.is_quads = true;
-			}
-		}
-	}
-
-	void RuntimeEvaluator::init_royal_flush(Props& props)
-	{
-		if (!props.is_flush || !props.is_straight || props.straight_rank != CardRank::C_A) {
+		if (props.straight_rank != 14) {
 			props.is_royal = false;
 			return;
 		}
 
 		int counter = 0;
 		for (auto& card : props.cards) {
-			if (card.get_rank() < CardRank::C_T) {
+			if (card.rank < 10) {
 				props.is_royal = false;
 				break;
 			}
-			if (card.get_suit() == props.flush_suit) {
+			if (card.suit == board_cache->max_suit) {
 				++counter;
-				if (counter == 5) {
-					props.is_royal = true;
-					break;
-				}
 			}
 		}
+
+		props.is_royal = counter == 5;
 	}
 
-	void RuntimeEvaluator::init_straight_flush(Props& props)
+	void CachedEvaluator::init_straight_flush(Props& props)
 	{
 		if (!props.is_flush || !props.is_straight) {
 			props.is_strf = false;
 			return;
 		}
 
+		char curr_rank;
 		int counter = 0;
 		for (int i = 0; i < 7; ++i) {
-			curr_rank = props.cards[i].get_rank();
+			curr_rank = props.cards[i].rank;
 			if (curr_rank > props.straight_rank) {
 				continue;
 			}
-			if (props.cards[i].get_suit() != props.flush_suit) {
+			if (props.cards[i].suit != board_cache->max_suit) {
 				continue;
 			}
 
@@ -205,13 +102,13 @@ namespace Poker {
 			}
 		}
 
-		if (counter == 4 && props.straight_rank == CardRank::C_5) {
+		if (counter == 4 && props.straight_rank == 5) {
 			for (auto& card : props.cards) {
-				if (card.get_rank() < CardRank::C_A) {
+				if (card.rank < 14) {
 					props.is_strf = false;
 					return;
 				}
-				if (card.get_rank() == CardRank::C_A && card.get_suit() == props.flush_suit) {
+				if (card.rank == 14 && card.suit == board_cache->max_suit) {
 					props.is_strf = true;
 					return;
 				}
@@ -221,346 +118,261 @@ namespace Poker {
 		props.is_strf = counter == 5;
 	}
 
-	void RuntimeEvaluator::init_quads(Props& props)
+	void CachedEvaluator::init_quads()
 	{
-		for (auto& card : props.cards) {
-			curr_rank = card.get_rank();
-			if (curr_rank != props.quads) {
-				props.kickers[0] = card.get_rank();
+		for (auto& card : board_cache->board) {
+			if (card.rank != hero.matches[3][0]) {
+				min_ranks[0] = card.rank + 1;
 				break;
 			}
 		}
 	}
 
-	void RuntimeEvaluator::init_full_house(Props& props)
+	void CachedEvaluator::init_flush()
 	{
-		if (props.trips_count >= 1) {
-			if (props.pair_count >= 1) {
-				props.is_full_house = true;
-				return;
-			}
-			else if (props.trips_count == 2) {
-				props.is_full_house = true;
-				props.pairs[0] = props.trips[1];
-				return;
-			}
-		}
+		int index = 5 - board_cache->suit_count;
+		min_ranks[0] = 1;
 
-		props.is_full_house = false;
-	}
-
-	void RuntimeEvaluator::init_flush(Props& props)
-	{
-		int counter = 0;
-		for (auto& card : props.cards) {
-			if (card.get_suit() == props.flush_suit) {
-				props.kickers[counter] = card.get_rank();
-				if (counter == 4) break;
-				++counter;
-			}
-		}
-	}
-
-	void RuntimeEvaluator::init_trips(Props& props)
-	{
-		int counter = 0;
-		for (auto& card : props.cards) {
-			if (card.get_rank() != props.trips[0]) {
-				props.kickers[counter] = card.get_rank();
-				if (counter == 1) break;
-				++counter;
-			}
-		}
-	}
-
-	void RuntimeEvaluator::init_two_pair(Props& props)
-	{
-		for (auto& card : props.cards) {
-			curr_rank = card.get_rank();
-			if (curr_rank != props.pairs[0] && curr_rank != props.pairs[1]) {
-				props.kickers[0] = curr_rank;
+		for (int i = 4; index < 1; --i) {
+			if (board_cache->board[i].suit == board_cache->max_suit) {
+				min_ranks[index] = board_cache->board[i].rank;
 				break;
 			}
 		}
 	}
 
-	void RuntimeEvaluator::init_pair(Props& props)
+	void CachedEvaluator::init_trips()
 	{
-		int counter = 0;
-		for (auto& card : props.cards) {
-			if (card.get_rank() != props.pairs[0]) {
-				props.kickers[counter] = card.get_rank();
-				if (counter == 2) break;
+		int counter = -hero.ranks[hero.matches[2][0]];
+
+		for (int i = 4; counter < 2; --i) {
+			if (board_cache->board[i].rank != hero.matches[2][0]) {
+				if (counter >= 0) {
+					min_ranks[counter] = board_cache->board[i].rank;
+				}
 				++counter;
 			}
 		}
 	}
 
-	bool RuntimeEvaluator::check_royal()
+	void CachedEvaluator::init_two_pair()
+	{
+		int i = 0;
+		for (; board_cache->board[i].rank == hero.matches[1][0] || board_cache->board[i].rank == hero.matches[1][1]; ++i) {}
+		min_ranks[0] = board_cache->board[i].rank;
+	}
+
+	void CachedEvaluator::init_pair()
+	{
+		//int hand_count = -hero.ranks[static_cast<int>(hero.matches[1][0])];
+
+		//if (hand_count == -2) {
+		//	return;
+		//}
+
+		//min_ranks[0] = CardRank::PLACEHOLDER;
+		//min_ranks[1] = CardRank::PLACEHOLDER;
+
+		//for (int i = 4; hand_count < 2; --i) {
+		//	if (board_cache->board[i].get_rank() != hero.matches[1][0]) {
+		//		if (hand_count >= 0) {
+		//			min_ranks[hand_count] = board_cache->board[i].get_rank();
+		//		}
+		//		++hand_count;
+		//	}
+		//}
+
+		min_ranks[0] = hero.matches[0][hero.match_counts[0] - 1];
+		min_ranks[1] = hero.matches[0][hero.match_counts[0] - 2];
+	}
+
+	bool CachedEvaluator::check_royal()
 	{
 		init_royal_flush(hero);
 		init_royal_flush(vill);
 
-		if (hero.is_royal) {
-			result = vill.is_royal ? Winner::SPLIT : Winner::HERO;
-			return true;
-		}
-		else if (vill.is_royal) {
-			result = Winner::VILL;
-			return true;
+		if (!hero.is_royal && !vill.is_royal) {
+			return false;
 		}
 
-		return false;
+		result = hero.is_royal - vill.is_royal;
+
+		return true;
 	}
 
-	bool RuntimeEvaluator::check_strf()
+	bool CachedEvaluator::check_strf()
 	{
 		init_straight_flush(hero);
 		init_straight_flush(vill);
 
-		if (hero.is_strf) {
-			if (!vill.is_strf || hero.straight_rank > vill.straight_rank) {
-				result = Winner::HERO;
-			}
-			else {
-				result = hero.straight_rank == vill.straight_rank ? Winner::SPLIT : Winner::VILL;
-			}
-
-			return true;
-		}
-		else if (vill.is_strf) {
-			result = Winner::VILL;
-			return true;
+		if (!hero.is_strf && !vill.is_strf) {
+			return false;
 		}
 
-		return false;
+		result = hero.is_strf * hero.straight_rank - vill.is_strf * vill.straight_rank;
+
+		return true;
 	}
 
-	bool RuntimeEvaluator::check_quads()
+	bool CachedEvaluator::check_quads()
 	{
-		if (hero.is_quads) {
-			if (!vill.is_quads) {
-				result = Winner::HERO;
-			}
-			else {
-				init_quads(hero);
-				init_quads(vill);
-
-				if (hero.quads > vill.quads) result = Winner::HERO;
-				else if (hero.quads < vill.quads) result = Winner::VILL;
-				else if (hero.kickers[0] > vill.kickers[0]) result = Winner::HERO;
-				else if (hero.kickers[0] < vill.kickers[0]) result = Winner::VILL;
-				else result = Winner::SPLIT;
-			}
-
-			return true;
-		}
-		else if (vill.is_quads) {
-			result = Winner::VILL;
-			return true;
+		if (!hero.match_counts[3] && !vill.match_counts[3]) {
+			return false;
 		}
 
-		return false;
+		result = hero.match_counts[3] * hero.matches[3][0] - vill.match_counts[3] * vill.matches[3][0];
+
+		if (result == 0) {
+			init_quads();
+
+			result = (hero.hand_ranks[0] / min_ranks[0]) * static_cast<int>(hero.hand_ranks[0])
+				- (vill.hand_ranks[0] / min_ranks[0]) * static_cast<int>(vill.hand_ranks[0]);
+		}
+
+		return true;
 	}
 
-	bool RuntimeEvaluator::check_full_house()
+	bool CachedEvaluator::check_full_house()
 	{
-		init_full_house(hero);
-		init_full_house(vill);
+		hero.is_full_house = (hero.match_counts[2] == 1 && hero.match_counts[1] >= 1) || hero.match_counts[2] == 2;
+		vill.is_full_house = (vill.match_counts[2] == 1 && vill.match_counts[1] >= 1) || vill.match_counts[2] == 2;
 
-		if (hero.is_full_house) {
-			if (!vill.is_full_house) {
-				result = Winner::HERO;
-			}
-			else {
-				if (hero.trips[0] > vill.trips[0]) result = Winner::HERO;
-				else if (hero.trips[0] < vill.trips[0]) result = Winner::VILL;
-				else if (hero.pairs[0] > vill.pairs[0]) result = Winner::HERO;
-				else if (hero.pairs[0] < vill.pairs[0]) result = Winner::VILL;
-				else result = Winner::SPLIT;
-			}
-
-			return true;
-		}
-		else if (vill.is_full_house) {
-			result = Winner::VILL;
-			return true;
+		if (!hero.is_full_house && !vill.is_full_house) {
+			return false;
 		}
 
-		return false;
+		result = hero.is_full_house * hero.matches[2][0] - vill.is_full_house * vill.matches[2][0];
+		if (result != 0) return true;
+
+		if (hero.match_counts[2] == 2) hero.matches[1][0] = hero.matches[2][1];
+		if (vill.match_counts[2] == 2) vill.matches[1][0] = vill.matches[2][1];
+		result = hero.matches[1][0] - vill.matches[1][0];
+
+		return true;
 	}
 
-	bool RuntimeEvaluator::check_flush()
+	bool CachedEvaluator::check_flush()
 	{
-		if (hero.is_flush) {
-			if (!vill.is_flush) {
-				result = Winner::HERO;
-			}
-			else {
-				init_flush(hero);
-				init_flush(vill);
-
-				for (int i = 0; i < 5; ++i) {
-					if (hero.kickers[i] > vill.kickers[i]) {
-						result = Winner::HERO;
-						return true;
-					}
-					else if (hero.kickers[i] < vill.kickers[i]) {
-						result = Winner::VILL;
-						return true;
-					}
-				}
-
-				result = Winner::SPLIT;
-			}
-
-			return true;
-		}
-		else if (vill.is_flush) {
-			result = Winner::VILL;
-			return true;
+		if (!hero.is_flush && !vill.is_flush) {
+			return false;
 		}
 
-		return false;
+		result = hero.is_flush - vill.is_flush;
+		if (result != 0) return true;
+
+		init_flush();
+
+		int index_h = (hero.cache->hand.primary.suit != board_cache->max_suit) << (hero.cache->hand.secondary.suit != board_cache->max_suit);
+		int index_v = (vill.cache->hand.primary.suit != board_cache->max_suit) << (vill.cache->hand.secondary.suit != board_cache->max_suit);
+
+		result = (vill.hand_ranks[index_v] / min_ranks[0]) * static_cast<int>(vill.hand_ranks[index_v]) * (index_v - 2)
+			- (hero.hand_ranks[index_h] / min_ranks[0]) * static_cast<int>(hero.hand_ranks[index_h]) * (index_h - 2);
+
+		return true;
 	}
 
-	bool RuntimeEvaluator::check_straight()
+	bool CachedEvaluator::check_straight()
 	{
-		if (hero.is_straight) {
-			if (!vill.is_straight || hero.straight_rank > vill.straight_rank) {
-				result = Winner::HERO;
-			}
-			else {
-				result = hero.straight_rank == vill.straight_rank ? Winner::SPLIT : Winner::VILL;
-			}
-
-			return true;
-		}
-		else if (vill.is_straight) {
-			result = Winner::VILL;
-			return true;
+		if (!hero.is_straight && !vill.is_straight) {
+			return false;
 		}
 
-		return false;
+		result = hero.is_straight * hero.straight_rank - vill.is_straight * vill.straight_rank;
+
+		return true;
 	}
 
-	bool RuntimeEvaluator::check_trips()
+	bool CachedEvaluator::check_trips()
 	{
-		if (hero.trips_count >= 1) {
-			if (vill.trips_count == 0) {
-				result = Winner::HERO;
-			}
-			else {
-				init_trips(hero);
-				init_trips(vill);
-
-				if (hero.trips[0] > vill.trips[0]) result = Winner::HERO;
-				else if (hero.trips[0] < vill.trips[0]) result = Winner::VILL;
-				else if (hero.kickers[0] > vill.kickers[0]) result = Winner::HERO;
-				else if (hero.kickers[0] < vill.kickers[0]) result = Winner::VILL;
-				else if (hero.kickers[1] > vill.kickers[1]) result = Winner::HERO;
-				else if (hero.kickers[1] < vill.kickers[1]) result = Winner::VILL;
-				else result = Winner::SPLIT;
-			}
-
-			return true;
-		}
-		else if (vill.trips_count >= 1) {
-			result = Winner::VILL;
-			return true;
+		if (!hero.match_counts[2] & !vill.match_counts[2]) {
+			return false;
 		}
 
-		return false;
+		result = hero.match_counts[2] * hero.matches[2][0] - vill.match_counts[2] * vill.matches[2][0];
+
+		if (result == 0) {
+			init_trips();
+
+			int index = 0;
+			do {
+				result = (hero.hand_ranks[index] / min_ranks[index]) * static_cast<int>(hero.hand_ranks[index])
+					- (vill.hand_ranks[index] / min_ranks[index]) * static_cast<int>(vill.hand_ranks[index]);
+				++index;
+			} while (result == 0 && index < 2);
+		}
+
+		return true;
 	}
 
-	bool RuntimeEvaluator::check_two_pair()
+	bool CachedEvaluator::check_two_pair()
 	{
-		if (hero.pair_count >= 2) {
-			if (vill.pair_count < 2) {
-				result = Winner::HERO;
-			}
-			else {
-				init_two_pair(hero);
-				init_two_pair(vill);
-
-				if (hero.pairs[0] > vill.pairs[0]) result = Winner::HERO;
-				else if (hero.pairs[0] < vill.pairs[0]) result = Winner::VILL;
-				else if (hero.pairs[1] > vill.pairs[1]) result = Winner::HERO;
-				else if (hero.pairs[1] < vill.pairs[1]) result = Winner::VILL;
-				else if (hero.kickers[0] > vill.kickers[0]) result = Winner::HERO;
-				else if (hero.kickers[0] < vill.kickers[0]) result = Winner::VILL;
-				else result = Winner::SPLIT;
-			}
-
-			return true;
-		}
-		else if (vill.pair_count >= 2) {
-			result = Winner::VILL;
-			return true;
+		if (hero.match_counts[1] < 2 && vill.match_counts[1] < 2) {
+			return false;
 		}
 
-		return false;
+		result = (hero.match_counts[1] / 2) * hero.matches[1][0] - (vill.match_counts[1] / 2) * vill.matches[1][0];
+		if (result != 0) return true;
+
+		result = (hero.match_counts[1] / 2) * hero.matches[1][1] - (vill.match_counts[1] / 2) * vill.matches[1][1];
+		if (result != 0) return true;
+
+		init_two_pair();
+
+		int index_h = hero.hand_ranks[0] == hero.matches[1][0] || hero.hand_ranks[0] == hero.matches[1][1];
+		int index_v = vill.hand_ranks[0] == vill.matches[1][0] || vill.hand_ranks[0] == vill.matches[1][1];
+		result = (hero.hand_ranks[index_h] / min_ranks[0]) * static_cast<int>(hero.hand_ranks[index_h])
+			- (vill.hand_ranks[index_v] / min_ranks[0]) * static_cast<int>(vill.hand_ranks[index_v]);
+
+		return true;
 	}
 
-	bool RuntimeEvaluator::check_pair()
+	bool CachedEvaluator::check_pair()
 	{
-		if (hero.pair_count == 1) {
-			if (vill.pair_count == 0) {
-				result = Winner::HERO;
-			}
-			else {
-				init_pair(hero);
-				init_pair(vill);
-
-				if (hero.pairs[0] > vill.pairs[0]) result = Winner::HERO;
-				else if (hero.pairs[0] < vill.pairs[0]) result = Winner::VILL;
-				else if (hero.kickers[0] > vill.kickers[0]) result = Winner::HERO;
-				else if (hero.kickers[0] < vill.kickers[0]) result = Winner::VILL;
-				else if (hero.kickers[1] > vill.kickers[1]) result = Winner::HERO;
-				else if (hero.kickers[1] < vill.kickers[1]) result = Winner::VILL;
-				else if (hero.kickers[2] > vill.kickers[2]) result = Winner::HERO;
-				else if (hero.kickers[2] < vill.kickers[2]) result = Winner::VILL;
-				else result = Winner::SPLIT;
-			}
-
-			return true;
-		}
-		else if (vill.pair_count == 1) {
-			result = Winner::VILL;
-			return true;
+		if (!hero.match_counts[1] & !vill.match_counts[1]) {
+			return false;
 		}
 
-		return false;
+		result = hero.match_counts[1] * hero.matches[1][0] - vill.match_counts[1] * vill.matches[1][0];
+
+		if (result == 0) {
+			init_pair();
+
+			int index = 0;
+			do {
+				result = (hero.hand_ranks[index] / min_ranks[index]) * static_cast<int>(hero.hand_ranks[index])
+					- (vill.hand_ranks[index] / min_ranks[index]) * static_cast<int>(vill.hand_ranks[index]);
+				++index;
+			} while (result == 0 && index < 2);
+		}
+
+		return true;
 	}
 
-	void RuntimeEvaluator::check_high_card()
+	void CachedEvaluator::check_high_card()
 	{
-		for (int i = 0; i < 5; ++i) {
-			if (hero.cards[i] > vill.cards[i]) {
-				result = Winner::HERO;
-				return;
-			}
-			else if (hero.cards[i] < vill.cards[i]) {
-				result = Winner::VILL;
-				return;
-			}
-		}
-		result = Winner::SPLIT;
+		char min_rank_1 = board_cache->board[4].rank;
+		char min_rank_2 = board_cache->board[3].rank;
+
+		int index = 0;
+		do {
+			result = (hero.hand_ranks[index] / min_ranks[index]) * static_cast<int>(hero.hand_ranks[index])
+				- (vill.hand_ranks[index] / min_ranks[index]) * static_cast<int>(vill.hand_ranks[index]);
+			++index;
+		} while (result == 0 && index < 2);
 	}
 
-	Winner RuntimeEvaluator::evaluate()
+	int CachedEvaluator::evaluate()
 	{
-		process_cards();
-		process_flush();
+		process_flush(hero);
+		process_flush(vill);
+
 		process_straight(hero);
 		process_straight(vill);
 
 		if (check_royal()) return result;
 		if (check_strf()) return result;
 
-		process_ranks();
-		process_matches(hero);
-		process_matches(vill);
+		process_matches();
 
 		if (check_quads()) return result;
 		if (check_full_house()) return result;

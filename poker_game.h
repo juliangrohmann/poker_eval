@@ -21,21 +21,21 @@ namespace Poker {
 
 	// CardRank
 
-	enum class CardRank : char {
-		C_2 = 0,
-		C_3 = 1,
-		C_4 = 2,
-		C_5 = 3,
-		C_6 = 4,
-		C_7 = 5,
-		C_8 = 6,
-		C_9 = 7,
-		C_T = 8,
-		C_J = 9,
-		C_Q = 10,
-		C_K = 11,
-		C_A = 12,
-		PLACEHOLDER = 13
+	enum class CardRank : signed char {
+		PLACEHOLDER = 1,
+		C_2 = 2,
+		C_3 = 3,
+		C_4 = 4,
+		C_5 = 5,
+		C_6 = 6,
+		C_7 = 7,
+		C_8 = 8,
+		C_9 = 9,
+		C_T = 10,
+		C_J = 11,
+		C_Q = 12,
+		C_K = 13,
+		C_A = 14,
 	};
 
 	inline CardRank operator+(CardRank rank, int num) { return static_cast<CardRank>(static_cast<char>(rank) + num); }

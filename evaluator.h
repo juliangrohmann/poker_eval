@@ -7,55 +7,79 @@
 #include <utility>
 
 namespace Poker {
-	enum class Winner {
-		HERO, VILL, SPLIT
+
+	struct SlimCard {
+		char rank;
+		char suit;
 	};
 
-	class RuntimeEvaluator {
-	public:
-		RuntimeEvaluator(const PokerHand& hero_hand, const PokerHand& vill_hand, const Board& board)
-			: hero{ hero_hand }, vill{ vill_hand }, board{ board } {}
+	inline bool operator<(const SlimCard& hero, const SlimCard& vill) { return hero.rank < vill.rank; }
+	inline bool operator>(const SlimCard& hero, const SlimCard& vill) { return vill < hero; }
+	inline bool operator==(const SlimCard& hero, const SlimCard& vill) { return !(hero < vill) && !(hero > vill); }
+	inline bool operator!=(const SlimCard& hero, const SlimCard& vill) { return !(hero == vill); }
+	inline bool operator>=(const SlimCard& hero, const SlimCard& vill) { return hero > vill || hero == vill; }
+	inline bool operator<=(const SlimCard& hero, const SlimCard& vill) { return hero < vill || hero == vill; }
 
-		Winner evaluate();
+	struct SlimHand {
+		SlimCard primary;
+		SlimCard secondary;
+	};
+
+	struct BoardCache {
+		std::array<SlimCard, 5> board;
+		std::array<std::array<char, 13>, 13> straights;
+		std::vector<std::pair<char, char>> ranks;
+		std::array<char, 4> suits = { 0 };
+		char max_suit = 0;
+		char suit_count = 0;
+	};
+
+	struct HandCache {
+		SlimHand hand;
+		std::array<char, 15> ranks = { 0 };
+		std::array<char, 4> suits = { 0 };
+	};
+
+	class CachedEvaluator {
+	public:
+		CachedEvaluator(HandCache*& hero_cache, HandCache*& vill_cache, BoardCache*& board_cache)
+			: hero{ hero_cache }, vill{ vill_cache }, board_cache{ board_cache } {}
+
+		int evaluate();
 
 	private:
 		struct Props {
-			Props(const PokerHand& hand) : hand{ hand } {}
+			Props(HandCache*& cache) : cache{ cache } {}
 
-			const PokerHand& hand = PokerHand(Card(), Card());
-			std::array<Card, 7> cards;
-			std::array<int, 13> ranks;
+			HandCache*& cache;
+			std::array<SlimCard, 7> cards;
+			std::array<int, 15> ranks;
 			std::array<int, 4> suits;
-			std::array<CardRank, 3> pairs = { CardRank::PLACEHOLDER };
-			std::array<CardRank, 2> trips = { CardRank::PLACEHOLDER };
-			std::array<CardRank, 5> kickers = { CardRank::PLACEHOLDER };
-			CardRank quads = CardRank::PLACEHOLDER;
-			CardSuit flush_suit = CardSuit::PLACEHOLDER;
-			CardRank straight_rank = CardRank::PLACEHOLDER;
+			std::array<std::array<char, 5>, 4> matches;
+			std::array<int, 4> match_counts;
+			std::array<char, 5> kickers = { 1 };
+			std::array<char, 3> hand_ranks = { 1 };
+			char straight_rank = 1;
 			bool is_flush = false;
 			bool is_straight = false;
 			bool is_royal = false;
 			bool is_strf = false;
-			bool is_quads = false;
 			bool is_full_house = false;
-			int trips_count = 0;
-			int pair_count = 0;
+			int kicker_count = 0;
 		};
 
-		void process_cards();
-		void process_flush();
+		void process_flush(Props& props);
 		void process_straight(Props& props);
-		void process_ranks();
-		void process_matches(Props& props);
+		void process_matches();
 
 		void init_royal_flush(Props& props);
 		void init_straight_flush(Props& props);
-		void init_quads(Props& props);
-		void init_full_house(Props& props);
-		void init_flush(Props& props);
-		void init_trips(Props& props);
-		void init_two_pair(Props& props);
-		void init_pair(Props& props);
+		void init_quads();
+		void init_flush();
+		void init_trips();
+		void init_two_pair();
+		void init_pair();
+		void eval_two_kickers();
 
 		bool check_royal();
 		bool check_strf();
@@ -68,12 +92,11 @@ namespace Poker {
 		bool check_pair();
 		void check_high_card();
 
-		const Board& board;
+		BoardCache*& board_cache;
 		Props hero;
 		Props vill;
 
-		CardRank curr_rank = CardRank::PLACEHOLDER;
-		CardRank next_rank = CardRank::PLACEHOLDER;
-		Winner result = Winner::HERO;
+		std::array<char, 2> min_ranks = { 1 };
+		int result = 0;
 	};
 }
