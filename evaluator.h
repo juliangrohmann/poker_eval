@@ -53,7 +53,6 @@ namespace Poker {
 
 			HandCache*& cache;
 			std::array<SlimCard, 7> cards;
-			std::array<int, 15> ranks;
 			std::array<int, 4> suits;
 			std::array<std::array<char, 5>, 4> matches;
 			std::array<int, 4> match_counts;

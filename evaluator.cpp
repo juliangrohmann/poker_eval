@@ -143,7 +143,7 @@ namespace Poker {
 
 	void CachedEvaluator::init_trips()
 	{
-		int counter = -hero.ranks[hero.matches[2][0]];
+		int counter = -hero.cache->ranks[hero.matches[2][0]];
 
 		for (int i = 4; counter < 2; --i) {
 			if (board_cache->board[i].rank != hero.matches[2][0]) {
@@ -296,7 +296,7 @@ namespace Poker {
 			int index = 0;
 			do {
 				result = (hero.hand_ranks[index] / min_ranks[index]) * static_cast<int>(hero.hand_ranks[index])
-					- (vill.hand_ranks[index] / min_ranks[index]) * static_cast<int>(vill.hand_ranks[index]);
+					   - (vill.hand_ranks[index] / min_ranks[index]) * static_cast<int>(vill.hand_ranks[index]);
 				++index;
 			} while (result == 0 && index < 2);
 		}

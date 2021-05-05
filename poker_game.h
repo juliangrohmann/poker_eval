@@ -21,7 +21,7 @@ namespace Poker {
 
 	// CardRank
 
-	enum class CardRank : signed char {
+	enum class CardRank : char {
 		PLACEHOLDER = 1,
 		C_2 = 2,
 		C_3 = 3,
